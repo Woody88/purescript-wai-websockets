@@ -6,7 +6,7 @@ import Control.Monad.Rec.Class (forever)
 import Data.ByteString (ByteString)
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
-import Effect.Aff (Aff, launchAff_, makeAff, nonCanceler)
+import Effect.Aff (Aff, launchAff_, makeAff, nonCanceler, runAff_)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Network.WebSockets.Connection (Connection(..), PendingConnection(..))
@@ -27,10 +27,13 @@ runServer port app = do
     wss        <- WSS.createServer NoServer mempty
     httpserver <- HTTP.createServer (\_ _-> pure unit)
 
-    -- Connection loop
-    launchAff_ $ forever $ do 
+    launchAff_ $ do 
         pc <- makePendingConnection wss httpserver defaultConnectionOptions (const $ pure unit)
-        liftEffect $ app pc
+        liftEffect $ app pc   --- This piece will run only once and block
+        -- makeAff \done -> do 
+            
+        --     done $ pure unit 
+        --     pure $ nonCanceler
 
     HTTP.listen httpserver { backlog: Nothing, hostname: "127.0.0.1", port } $ pure unit
 
