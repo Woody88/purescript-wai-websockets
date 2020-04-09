@@ -125,6 +125,8 @@ let overrides = {=}
 
 let additions = 
     { 
+        wai = ../purescript-wai/spago.dhall as Location
+    ,   http-types =  ../purescript-http-types/spago.dhall as Location 
     ,   ws = ../purescript-ws/spago.dhall as Location 
     }
 
