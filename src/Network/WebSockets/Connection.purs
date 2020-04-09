@@ -61,7 +61,6 @@ defaultAcceptRequest = AcceptRequest
 
 acceptRequest :: PendingConnection -> AcceptRequest -> Aff Connection 
 acceptRequest (PendingConnection {wss, onAccept, options, request, socket, reqHead}) _ = makeAff \done -> do 
-    Console.log "in"
     WSS.handleUpgrade wss request socket reqHead \ws -> do 
         conn <- mkConnection ws
         onAccept conn 
@@ -82,13 +81,12 @@ acceptRequest (PendingConnection {wss, onAccept, options, request, socket, reqHe
 
 withPingThread :: forall a. 
     Connection
-    -> Number  -- ^ Second interval in which pings should be sent.
+    -> Number       -- ^ Second interval in which pings should be sent.
     -> Effect Unit  -- ^ Repeat this after sending a ping.
-    -> Aff a   -- ^ Application to wrap with a ping thread.
-    -> Aff a   -- ^ Executes application and kills ping thread when done.
+    -> Aff a        -- ^ Application to wrap with a ping thread.
+    -> Aff a        -- ^ Executes application and kills ping thread when done.
 withPingThread c@(Connection conn) n action app = do 
     liftEffect $ WS.onpong conn.websocket \_ -> do
-        Console.log "got pong"
         Ref.modify_ (const true) conn.sentClose
     Aff.finally (pingThread c n action) app 
 
@@ -97,8 +95,7 @@ pingThread _ 0.00 _ = pure unit
 pingThread c@(Connection conn) n action = do 
     delay $ Milliseconds n
     alive <- liftEffect $ Ref.read conn.sentClose
-    Console.log $ show alive
-    liftEffect $ when (not alive) (Console.log "broken" *> WS.terminate conn.websocket)
+    liftEffect $ when (not alive) (WS.terminate conn.websocket)
     ping alive 
     where 
         ping :: Boolean -> Aff Unit 
