@@ -4,11 +4,12 @@ import Prelude
 
 import Control.Monad.Rec.Class (forever)
 import Data.ByteString (ByteString)
-import Data.Either (either)
-import Data.Foldable (any)
+import Data.ByteString as BS
+import Data.Either (Either(..))
+import Data.Foldable (any, traverse_)
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
-import Effect.Aff (Aff, Milliseconds(..), attempt, delay, error, forkAff, makeAff, nonCanceler, runAff_, throwError, try)
+import Effect.Aff (Aff, Milliseconds(..), delay, error, forkAff, makeAff, nonCanceler, throwError)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Ref (Ref)
@@ -73,11 +74,10 @@ receiveDataMessage c@(Connection conn) = do
     case msg of
         DataMessage dm    -> pure dm
         ControlMessage cm    
-            | Close _ _ <- cm -> do
+            | Close status r <- cm -> do
                 liftEffect do 
                     hasSentClose <- Ref.read conn.sentClose 
-                    WS.terminate conn.websocket 
-                Console.log "out"
+                    WS.close' conn.websocket status $ BS.fromUTF8 r
                 throwError $ error "CloseRequest"
             | otherwise   -> throwError $ error "not implemented"
 
@@ -90,9 +90,8 @@ send conn = sendAll conn <<< pure
 sendAll :: Connection -> Array Message -> Aff Unit
 sendAll _    []   = pure unit
 sendAll c@(Connection conn) msgs = do
-    liftEffect $ when (any isCloseMessage msgs) $
-        Ref.write true conn.sentClose
     conn.write msgs
+    liftEffect $ when (any isCloseMessage msgs) (WS.close conn.websocket)
   where
     isCloseMessage (ControlMessage (Close _ _)) = true
     isCloseMessage _                            = false
@@ -123,13 +122,17 @@ sendCloseCode :: forall a. WebSocketsData a => Connection -> Int -> a -> Aff Uni
 sendCloseCode conn code =
     send conn <<< ControlMessage <<< Close code <<< toByteString
 
+terminate :: Connection -> Aff Unit 
+terminate (Connection conn) = liftEffect $ WS.terminate conn.websocket
+
 acceptRequest :: PendingConnection -> AcceptRequest -> Aff Connection 
-acceptRequest (PendingConnection {wss, onAccept, options, request, socket, reqHead}) _ = makeAff \done -> do 
-    WSS.handleUpgrade wss request socket reqHead \ws -> do 
-        conn <- mkConnection ws
-        onAccept conn 
-        done $ pure conn 
-    pure nonCanceler
+acceptRequest (PendingConnection {wss, onAccept, options, request, socket, reqHead}) _ = do
+    makeAff \done -> do 
+        WSS.handleUpgrade wss request socket reqHead \ws -> do 
+            conn <- mkConnection ws
+            onAccept conn 
+            done $ pure conn 
+        pure nonCanceler
 
     where 
         mkConnection ws = do 
@@ -138,7 +141,7 @@ acceptRequest (PendingConnection {wss, onAccept, options, request, socket, reqHe
                 { options: options
                 , type: ServerConnection
                 , parse: parseMessage ws
-                , write: \_ -> pure unit 
+                , write: encodeMessage ws
                 , websocket: ws 
                 , sentClose: ref
                 }
@@ -147,7 +150,21 @@ parseMessage :: WebSocket -> Aff (Maybe Message)
 parseMessage ws = makeAff \done -> do 
     WS.onmessage ws (done <<< pure <<< Just <<< DataMessage <<< Binary)
     pure nonCanceler
-    
+
+encodeMessage :: WebSocket -> Array Message -> Aff Unit 
+encodeMessage ws msgs = makeAff \done -> do 
+    Console.log("sending")
+    traverse_ sendMsg msgs
+    done $ pure unit 
+    pure nonCanceler
+    where 
+        sendMsg = case _ of 
+            DataMessage (Text t)        -> WS.sendText ws $ fromByteString t    
+            DataMessage (Binary bs)     -> WS.send ws bs
+            ControlMessage (Close _ bs) -> WS.sendText ws $ fromByteString bs
+            ControlMessage (Ping bs)    -> WS.send ws bs
+            ControlMessage (Pong bs)    -> WS.send ws bs
+
 withPingThread :: forall a. 
     Connection
     -> Number       -- ^ Second interval in which pings should be sent.
@@ -158,13 +175,14 @@ withPingThread c@(Connection conn) n action app = do
     liftEffect $ WS.onpong conn.websocket \_ -> do
         Ref.modify_ (const true) conn.sentClose
     _ <- forkAff do pingThread c n action
-    app   
+    forever app   
 
 pingThread :: Connection -> Number -> Effect Unit -> Aff Unit 
 pingThread _ 0.00 _ = pure unit 
 pingThread c@(Connection conn) n action = do 
     delay $ Milliseconds n
     alive <- liftEffect $ Ref.read conn.sentClose
+    Console.log $ "isAlive: " <> show alive
     liftEffect $ when (not alive) (WS.terminate conn.websocket)
     ping alive 
     where 

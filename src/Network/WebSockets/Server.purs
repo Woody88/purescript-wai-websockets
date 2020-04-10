@@ -26,17 +26,10 @@ runServer ::
 runServer port app = do 
     wss        <- WSS.createServer NoServer mempty
     httpserver <- HTTP.createServer (\_ _-> pure unit)
-
-    launchAff_ $ do 
-        pc <- makePendingConnection wss httpserver defaultConnectionOptions (const $ pure unit)
-        liftEffect $ app pc   --- This piece will run only once and block
-        -- makeAff \done -> do 
-            
-        --     done $ pure unit 
-        --     pure $ nonCanceler
-
-    HTTP.listen httpserver { backlog: Nothing, hostname: "127.0.0.1", port } $ pure unit
-
+    HTTP.listen httpserver { backlog: Nothing, hostname: "127.0.0.1", port } $ do 
+        launchAff_ $ forever do 
+            pc <- makePendingConnection wss httpserver defaultConnectionOptions (const $ pure unit)
+            liftEffect $ app pc  
 
 makePendingConnection :: WSServer -> HTTP.Server -> ConnectionOptions -> (Connection -> Effect Unit) -> Aff PendingConnection
 makePendingConnection wss svr options onAccept = makeAff \done -> do 
