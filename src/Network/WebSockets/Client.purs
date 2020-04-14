@@ -3,7 +3,7 @@ module Network.WebSockets.Client where
 import Prelude
 
 import Effect (Effect)
-import Effect.Aff (Aff, launchAff_, makeAff, nonCanceler)
+import Effect.Aff (Aff, makeAff, nonCanceler)
 import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Network.WebSockets.Connection (Connection(..), encodeMessage, parseMessage)
@@ -11,7 +11,7 @@ import Network.WebSockets.Connection.Options (defaultConnectionOptions)
 import Network.WebSockets.Types (ConnectionType(..))
 import WebSocket as WS
 
-type ClientApp a = Connection -> Aff a
+type ClientApp a = Connection -> Effect a
 
 runClient :: forall a. 
     String          -- ^ Address
@@ -25,7 +25,7 @@ runClient addr capp = do
                 conn <- mkConnection ws 
                 done $ pure $ conn 
             pure nonCanceler
-    capp conn'
+    liftEffect $ capp conn'
     where
         mkConnection ws = do 
             sentClose <- Ref.new true

@@ -5,24 +5,20 @@ import Prelude
 import Control.Monad.Rec.Class (forever)
 import Data.ByteString (ByteString)
 import Data.ByteString as BS
-import Data.Either (Either(..))
 import Data.Foldable (any, traverse_)
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
-import Effect.Aff (Aff, Milliseconds(..), delay, error, forkAff, makeAff, nonCanceler, throwError)
+import Effect.Aff (Aff, Milliseconds(..), delay, error, forkAff, makeAff, nonCanceler, supervise, throwError)
 import Effect.Class (liftEffect)
-import Effect.Class.Console as Console
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Network.HTTP.Types (RequestHeaders)
 import Network.WebSockets.Connection.Options (ConnectionOptions)
+import Network.WebSockets.Http (RequestHead)
 import Network.WebSockets.Types (class WebSocketsData, ConnectionType(..), ControlMessage(..), DataMessage(..), Message(..), fromByteString, fromDataMessage, toByteString)
-import Node.HTTP as HTTP
 import Node.Net.Socket as Net
 import WebSocket (WebSocket)
 import WebSocket as WS
-import WebSocket.Server (WSServer)
-import WebSocket.Server as WSS
 
 newtype Connection = Connection
     { options    :: ConnectionOptions
@@ -36,14 +32,13 @@ newtype Connection = Connection
 newtype PendingConnection = PendingConnection
     { options  :: ConnectionOptions
     -- ^ Options, passed as-is to the 'Connection'
-    , reqHead  :: ByteString 
-    , request  :: HTTP.Request
+    , request  :: RequestHead 
+        -- ^ Useful for e.g. inspecting the request path.
     , socket   :: Net.Socket
-    -- ^ Useful for e.g. inspecting the request path.
     , onAccept :: Connection -> Effect Unit
     -- ^ One-shot callback fired when a connection is accepted, i.e., *after*
     -- the accepting response is sent to the client.
-    , wss             :: WSServer
+    , upgrade  :: Net.Socket -> Aff WebSocket
     }
 
 newtype AcceptRequest = AcceptRequest
@@ -126,14 +121,9 @@ terminate :: Connection -> Aff Unit
 terminate (Connection conn) = liftEffect $ WS.terminate conn.websocket
 
 acceptRequest :: PendingConnection -> AcceptRequest -> Aff Connection 
-acceptRequest (PendingConnection {wss, onAccept, options, request, socket, reqHead}) _ = do
-    makeAff \done -> do 
-        WSS.handleUpgrade wss request socket reqHead \ws -> do 
-            conn <- mkConnection ws
-            onAccept conn 
-            done $ pure conn 
-        pure nonCanceler
-
+acceptRequest (PendingConnection {onAccept, options, upgrade, request, socket}) _ = do
+    ws <- upgrade socket
+    liftEffect $ mkConnection ws 
     where 
         mkConnection ws = do 
             ref <- Ref.new true
@@ -153,7 +143,6 @@ parseMessage ws = makeAff \done -> do
 
 encodeMessage :: WebSocket -> Array Message -> Aff Unit 
 encodeMessage ws msgs = makeAff \done -> do 
-    Console.log("sending")
     traverse_ sendMsg msgs
     done $ pure unit 
     pure nonCanceler
@@ -171,7 +160,7 @@ withPingThread :: forall a.
     -> Effect Unit  -- ^ Repeat this after sending a ping.
     -> Aff a        -- ^ Application to wrap with a ping thread.
     -> Aff a       -- ^ Executes application and kills ping thread when done.
-withPingThread c@(Connection conn) n action app = do 
+withPingThread c@(Connection conn) n action app = supervise do 
     liftEffect $ WS.onpong conn.websocket \_ -> do
         Ref.modify_ (const true) conn.sentClose
     _ <- forkAff do pingThread c n action
@@ -182,7 +171,6 @@ pingThread _ 0.00 _ = pure unit
 pingThread c@(Connection conn) n action = do 
     delay $ Milliseconds n
     alive <- liftEffect $ Ref.read conn.sentClose
-    Console.log $ "isAlive: " <> show alive
     liftEffect $ when (not alive) (WS.terminate conn.websocket)
     ping alive 
     where 

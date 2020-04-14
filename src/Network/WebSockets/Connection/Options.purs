@@ -5,10 +5,10 @@ import Prelude
 import Effect (Effect)
 
 newtype ConnectionOptions = ConnectionOptions
-    { connectionOnPong :: Effect Unit
+    { onPong :: Effect Unit
     }
 
 defaultConnectionOptions :: ConnectionOptions
 defaultConnectionOptions = ConnectionOptions
-    { connectionOnPong: pure unit  
+    { onPong: pure unit  
     }
