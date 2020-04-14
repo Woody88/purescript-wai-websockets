@@ -26,4 +26,3 @@ application _ pending = launchAff_ do
                 case d of
                     ".exit" -> Console.log "Existing..." *> WS.sendClose conn "closing"
                     _       -> (Console.log $ "Received: " <> d) *> WS.sendTextData conn "hello back"
-

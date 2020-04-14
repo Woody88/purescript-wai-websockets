@@ -7,7 +7,6 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
 import Effect.Aff (makeAff, nonCanceler)
-import Effect.Class.Console as Console
 import Effect.Exception (throw)
 import Network.Wai (Application, responseSocket) as Wai
 import Network.Wai.Internal (Request(..))
@@ -63,7 +62,6 @@ runWebSockets :: forall a.
     -> Effect a
 runWebSockets options req@(Request {nodeRequest, rawHeader}) app socket = do 
     let throwBadRequestHandle = throw $ "Bad Wai Request Handle"
-    Console.log "hello"
     mrec <- pure do 
         httpreq <- nodeRequest
         rawHead <- rawHeader
