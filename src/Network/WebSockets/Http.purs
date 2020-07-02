@@ -2,6 +2,9 @@ module Network.WebSockets.Http where
 
 import Prelude
 
+import Data.Bifunctor (lmap)
+import Data.Newtype (wrap)
+import Data.Tuple (Tuple(..))
 import Foreign.Object as Object
 import Network.HTTP.Types as H
 import Node.HTTP as HTTP
@@ -21,4 +24,5 @@ mkRequestHead req secure =
         , secure
         }
     where 
-        headers = Object.toUnfoldable $ HTTP.requestHeaders req 
+        headers :: H.RequestHeaders
+        headers = map (\(Tuple k v) -> Tuple (wrap k) v) $ Object.toUnfoldable $ HTTP.requestHeaders req 
