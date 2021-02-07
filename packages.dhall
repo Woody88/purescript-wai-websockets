@@ -121,12 +121,44 @@ let additions =
 let upstream =
       https://github.com/purescript/package-sets/releases/download/psc-0.13.5-20191227/packages.dhall sha256:dee386e102d6b088702ceb41d5568b00f28ea3726f8c60378979a6c8b9c37827
 
-let overrides = {=}
+let overrides = 
+    { metadata = upstream.metadata // { version = "v0.14.0-rc4" } 
+    , prelude  = upstream.prelude //  { version = "cfd87116c9dd1eeeb75cf83ffaeac0224f159ed9" }
+    , record = upstream.record // { version = "ps-0.14" }
+    , typelevel-prelude = upstream.typelevel-prelude // { version = "master" }
+    , type-equality = upstream.type-equality // { version = "master" }
+    }
 
 let additions = 
     { 
-        wai = ../purescript-wai/spago.dhall as Location
-    ,   http-types =  ../purescript-http-types/spago.dhall as Location 
+        wai = 
+            { dependencies =
+                [ "http-types"
+                , "node-buffer"
+                , "node-http"
+                , "node-net"
+                , "node-streams"
+                , "node-url"
+                ]
+            , repo =
+                "https://github.com/Woody88/purescript-wai.git"
+            , version =
+                "master"
+            }
+    ,   http-types = 
+            { dependencies =
+                [ "console"
+                , "effect"
+                , "psci-support"
+                , "tuples"
+                , "unicode"
+                , "uri"
+                ]
+            , repo =
+                "https://github.com/Woody88/purescript-http-types.git"
+            , version =
+                "master"
+            }
     ,   ws = ../purescript-ws/spago.dhall as Location 
     }
 
