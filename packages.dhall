@@ -159,7 +159,22 @@ let additions =
             , version =
                 "master"
             }
-    ,   ws = ../purescript-ws/spago.dhall as Location 
+    ,   ws = 
+            { dependencies =
+                [ "aff"
+                , "bytestrings"
+                , "effect"
+                , "foreign-generic"
+                , "node-buffer"
+                , "node-http"
+                , "node-net"
+                , "psci-support"
+                ]
+            , repo =
+                "https://github.com/purescript-node-contrib/purescript-ws.git"
+            , version =
+                "master"
+            }
     }
 
 in  upstream // overrides // additions
