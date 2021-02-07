@@ -9,8 +9,7 @@ import Data.Newtype (unwrap, wrap)
 import Effect (Effect)
 import Effect.Aff (makeAff, nonCanceler)
 import Effect.Class (liftEffect)
-import Network.Wai (Response, headers, isSecure, responseSocket, url) as Wai
-import Network.Wai.Http (Application, HttpRequest) as Wai
+import Network.Wai (Application, Request, Response, responseSocket) as Wai
 import Network.WebSockets.Connection (PendingConnection(..)) as WS
 import Network.WebSockets.Connection.Options (ConnectionOptions) as WS
 import Network.WebSockets.Http (RequestHead(..))
@@ -19,6 +18,7 @@ import Network.WebSockets.Server (ServerApp) as WS
 import Node.Buffer (Buffer)
 import Node.Buffer as Buffer
 import Node.Net.Socket as Net
+import Wai.Websockets.Internal (withNodeRequest)
 import WebSocket.Server (WSServerConfig(..))
 import WebSocket.Server as WSS
 
@@ -33,7 +33,7 @@ websocketsOr opts app backup req sendResponse =
 
 websocketsApp :: WS.ConnectionOptions
               -> WS.ServerApp
-              -> Wai.HttpRequest
+              -> Wai.Request
               -> Maybe Wai.Response
 websocketsApp opts app request
     | isWebSocketsReq request = do 
@@ -43,30 +43,29 @@ websocketsApp opts app request
 
     | otherwise = Nothing
 
-getRequestHead :: Wai.HttpRequest -> WS.RequestHead 
+getRequestHead :: Wai.Request -> WS.RequestHead 
 getRequestHead req = RequestHead
-    { path: Wai.url req 
-    , headers: Wai.headers req
-    , secure: Wai.isSecure req
+    { path: _.url $ unwrap req 
+    , headers: _.headers $ unwrap req
+    , secure: _.isSecure $ unwrap req
     }
 
 -- | Returns whether or not the given 'Wai.Request' is a WebSocket request.
-isWebSocketsReq :: Wai.HttpRequest -> Boolean
+isWebSocketsReq :: Wai.Request -> Boolean
 isWebSocketsReq req =
     upgradeRequestHeader == (Just "websocket")
     where 
-        requestHeaders = Map.fromFoldable $ Wai.headers req 
+        requestHeaders = Map.fromFoldable $ _.headers $ unwrap req 
         upgradeRequestHeader  = (Map.lookup (wrap "upgrade") requestHeaders)
 
-runWebSockets :: forall a.
+runWebSockets ::
     WS.ConnectionOptions
-    -> Wai.HttpRequest
-    -> (WS.PendingConnection -> Effect a)
+    -> Wai.Request
+    -> (WS.PendingConnection -> Effect Unit)
     -> Net.Socket
     -> Buffer
-    -> Effect a
-runWebSockets options req app socket rawH = do 
-    let httpreq = unwrap req
+    -> Effect Unit
+runWebSockets options req app socket rawH = withNodeRequest req \httpreq -> do 
     wss <- WSS.createServer NoServer mempty
     let handleUpgrade req' reqH sck = makeAff \done -> do 
             WSS.handleUpgrade wss req' sck reqH \ws -> do 
